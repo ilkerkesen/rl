@@ -1,2 +1,2 @@
-# dqn
-Cart Pole with Deep Q-Networks using Knet
+# rl
+Reinforcement Learning with Julia/Knet
