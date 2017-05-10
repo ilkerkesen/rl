@@ -37,7 +37,7 @@ function main(args)
         ("--numepisodes"; default=NUM_EPISODES; arg_type=Int64)
         ("--monitor"; default=nothing)
         ("--seed"; default=-1; arg_type=Int64)
-        ("--generate"; action=:store_true)
+        ("--generate"; default=0; arg_type=Int64)
         ("--loadfile"; default=nothing)
         ("--savefile"; default=nothing)
         ("--period"; default=PERIOD; arg_type=Int64)
@@ -108,7 +108,7 @@ function main(args)
         end
     end
 
-    if o[:generate]
+    for k = 1:o[:generate]
         done = false
         state = getInitialState(env)
         while !done
