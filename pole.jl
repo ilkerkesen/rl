@@ -36,6 +36,8 @@ function main(args)
         ("--numepisodes"; default=NUM_EPISODES; arg_type=Int64)
         ("--monitor"; default=nothing)
         ("--seed"; default=-1; arg_type=Int64)
+        ("--generate"; action=:store_true)
+        ("--loadfile"; default=nothing)
     end
 
     isa(args, AbstractString) && (args=split(args))
@@ -44,15 +46,22 @@ function main(args)
     sr = o[:seed] > 0 ? srand(o[:seed]) : srand()
 
     env = GymEnv("CartPole-v0")
-    w = initweights(o[:atype], o[:hidden], o[:winit])
-    opts = map(wi->Adam(;gclip=o[:gclip]), w)
+    w = opts = nothing
+    if o[:loadfile] == nothing
+        w = initweights(o[:atype], o[:hidden], o[:winit])
+        opts = map(wi->Adam(;gclip=o[:gclip]), w)
+    else
+        w = load(o[:loadfile], "w")
+        opts = load(o[:loadfile], "opts")
+    end
+
     memory = ReplayMemory(o[:capacity])
     if o[:monitor] != nothing
         monitor_start(env, o[:monitor])
     end
 
     steps_done = 0
-    lossval = 0
+    currerr = preverr = Inf
     iter = 0
     for k = 1:o[:numepisodes]
         # reset environment
@@ -71,16 +80,17 @@ function main(args)
             if length(memory) >= o[:batchsize]
                 val = train!(w,memory,opts; o=o)
 
+                preverr = currerr
                 if iter < 100
-                    lossval = (iter * lossval) + val
-                    lossval = lossval / (iter+1)
+                    currerr = (iter * currerr) + val
+                    currerr = currerr / (iter+1)
                 else
-                    lossval = 0.01*val+0.99*lossval
+                    currerr = 0.01*val+0.99*currerr
                 end
 
                 iter += 1
                 if iter % 100 == 0
-                    println("($iter,$lossval)")
+                    println("($iter,$currerr)")
                 end
             end
 
@@ -89,6 +99,20 @@ function main(args)
             end
         end
 
+    end
+
+    if o[:generate]
+        done = false
+        state = getInitialState(env)
+        while !done
+            s = convert(o[:atype], state.data)
+            action = select_action(w,s,steps_done; o=o)
+            steps_done += 1
+            render_env(env)
+            next_state, reward = transfer(env, state, env.actions[action])
+            state = next_state
+            done = next_state.done
+        end
     end
 
     if o[:monitor] != nothing
@@ -189,14 +213,15 @@ function train!(w, memory, opts; o=Dict())
     rewards = convert(atype, rewards)
     next_states = convert(atype, next_states)
 
+    # expected return
     y0 = gamma*predict(w,next_states)
     y1 = maximum(y0,1)
     y2 = sum(y0 .* (y0.==y1), 1)
     y3 = reshape(y2, 1, length(y2))
-
     expret = reshape(rewards, 1, length(rewards))
     expret[:,mask] += gamma * y3
 
+    # training
     values = []
     g = gradient(w, states, actions, expret, mask; values=values)
     update!(w,g,opts)
@@ -215,27 +240,5 @@ function objective(w, states, actions, expret, mask; values=[])
 end
 
 gradient = grad(objective)
-
-# convolutional state
-# function initweights(atype)
-#     w = Array(Any,8)
-#     w[1] = xavier(5,5,3,16)
-#     w[2] = zeros(1,1,16,1)
-#     w[3] = xavier(5,5,16,32)
-#     w[4] = zeros(1,1,32,1)
-#     w[5] = xavier(5,5,32,32)
-#     w[6] = zeros(1,1,32,1)
-#     w[7] = xavier(2,448)
-#     w[8] = zeros(2,1)
-#     return map(wi->convert(atype,wi), w)
-# end
-
-# function predict(w,x0)
-#     cbr(x,i) = relu(conv4(w[2i-1], x; padding=0, stride=2) .+ w[2i])
-#     x1 = cbr(x0,1)
-#     x2 = cbr(x1,2)
-#     x3 = cbr(x2,3)
-#     x4 = w[end-1] * mat(x4) .+ w[end]
-# end
 
 !isinteractive() && !isdefined(Core.Main, :load_only) && main(ARGS)
