@@ -15,7 +15,7 @@ const NUM_EPISODES = 10
 const LR = 0.001
 const GCLIP = 5.0
 const WINIT = 0.1
-const CAPACITY = 1000
+const CAPACITY = 10000
 
 function main(args)
     s = ArgParseSettings()
@@ -179,7 +179,8 @@ function train!(w, memory, opts; o=Dict())
     states  = mapreduce(i->i.state.data, hcat, batch)
     actions = map(i->i.action, batch)
     rewards = map(i->i.reward, batch)
-    mask    = map(i->!i.next_state.done, batch)
+    mask = map(i->!i.next_state.done, batch)
+    mask = find(mask)
     next_states = filter(i->!i.next_state.done, batch)
     next_states = mapreduce(i->i.next_state.data, hcat, next_states)
 
@@ -188,40 +189,33 @@ function train!(w, memory, opts; o=Dict())
     rewards = convert(atype, rewards)
     next_states = convert(atype, next_states)
 
+    y0 = gamma*predict(w,next_states)
+    y1 = maximum(y0,1)
+    y2 = sum(y0 .* (y0.==y1), 1)
+    y3 = reshape(y2, 1, length(y2))
+
+    expret = reshape(rewards, 1, length(rewards))
+    expret[:,mask] += gamma * y3
+
     values = []
-    g = gradient(w,states,actions,rewards,next_states,mask,gamma; values=values)
+    g = gradient(w, states, actions, expret, mask; values=values)
     update!(w,g,opts)
     return values[1]
 end
 
-function objective(w, states, actions, rewards, next_states, mask, gamma; values=[])
+function objective(w, states, actions, expret, mask; values=[])
     qsa = predict(w, states)
     nrows,ncols = size(qsa)
     index = actions + nrows*(0:(length(actions)-1))
     qs  = qsa[index]
     qs  = reshape(qs, 1, length(qs))
-
-    y1 = maximum(next_states,1)
-    y2 = next_states[next_states.==y1]
-    y3 = reshape(y2, 1, length(y2))
-    next_state_values = y3
-
-    n1 = sum(mask)
-    n2 = length(mask)-n1
-
-    expval1 = next_state_values * gamma + reshape(rewards[mask], 1, n1)
-    expval2 = reshape(rewards[!mask], 1, n2)
-
-    qs1 = qs[mask]; qs1 = reshape(qs1, 1, length(qs1))
-    qs2 = qs[!mask]; qs2 = reshape(qs2, 1, length(qs2))
-
-    val = n1 * sum(expval1-qs1) + n2 * sum(expval2-qs2)
-    val = val / (n1+n2)
+    val = sumabs2(expret-qs) / length(qs)
     push!(values, val)
     return val
 end
 
 gradient = grad(objective)
+
 # convolutional state
 # function initweights(atype)
 #     w = Array(Any,8)
