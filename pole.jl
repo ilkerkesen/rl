@@ -54,6 +54,7 @@ function main(args)
         w = initweights(o[:atype], o[:hidden], o[:winit])
     else
         w = load(o[:loadfile], "w")
+        w = map(wi->convert(o[:atype], wi), w)
     end
     opts = map(wi->Adam(;gclip=o[:gclip]), w)
 
