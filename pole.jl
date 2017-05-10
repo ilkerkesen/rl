@@ -16,6 +16,7 @@ const LR = 0.001
 const GCLIP = 5.0
 const WINIT = 0.1
 const CAPACITY = 10000
+const PERIOD = 200
 
 function main(args)
     s = ArgParseSettings()
@@ -38,6 +39,8 @@ function main(args)
         ("--seed"; default=-1; arg_type=Int64)
         ("--generate"; action=:store_true)
         ("--loadfile"; default=nothing)
+        ("--savefile"; default=nothing)
+        ("--period"; default=PERIOD; arg_type=Int64)
     end
 
     isa(args, AbstractString) && (args=split(args))
@@ -49,11 +52,10 @@ function main(args)
     w = opts = nothing
     if o[:loadfile] == nothing
         w = initweights(o[:atype], o[:hidden], o[:winit])
-        opts = map(wi->Adam(;gclip=o[:gclip]), w)
     else
         w = load(o[:loadfile], "w")
-        opts = load(o[:loadfile], "opts")
     end
+    opts = map(wi->Adam(;gclip=o[:gclip]), w)
 
     memory = ReplayMemory(o[:capacity])
     if o[:monitor] != nothing
@@ -61,7 +63,8 @@ function main(args)
     end
 
     steps_done = 0
-    currerr = preverr = Inf
+    currerr = 0
+    preverr = 0
     iter = 0
     for k = 1:o[:numepisodes]
         # reset environment
@@ -89,7 +92,7 @@ function main(args)
                 end
 
                 iter += 1
-                if iter % 100 == 0
+                if iter % o[:period] == 0
                     println("($iter,$currerr)")
                 end
             end
@@ -99,6 +102,9 @@ function main(args)
             end
         end
 
+        if o[:savefile] != nothing
+            save(o[:savefile], "w", map(wi->Array(wi),w))
+        end
     end
 
     if o[:generate]
