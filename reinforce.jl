@@ -15,7 +15,7 @@ function main(args)
     @add_arg_table s begin
         ("--hidden"; nargs='*'; arg_type=Int64)
         ("--atype"; default=(gpu()>=0 ? "KnetArray{Float32}":"Array{Float32}"))
-        ("--optim"; default="Adam(;gclip=5.0)")
+        ("--optim"; default="Sgd(;lr=0.001)")
         ("--batchsize"; default=128; arg_type=Int64)
         ("--discount"; default=GAMMA; arg_type=Float64)
         ("--winit"; default=WINIT; arg_type=Float64)
@@ -25,6 +25,7 @@ function main(args)
         ("--monitor"; default=nothing)
         ("--generate"; default=0; arg_type=Int64)
         ("--period"; default=100; arg_type=Int64)
+        ("--pole"; default=1; arg_type=Int64)
     end
 
     isa(args, AbstractString) && (args=split(args))
@@ -33,7 +34,9 @@ function main(args)
     # o[:optim] = eval(parse(o[:optim]))
     sr = o[:seed] > 0 ? srand(o[:seed]) : srand()
 
-    env = GymEnv("CartPole-v0")
+    pole = o[:pole]
+    threshold = pole == 0 ? 200 : 500
+    env = GymEnv("CartPole-v$pole")
     w = opts = nothing
     if o[:loadfile] == nothing
         w = initweights(o[:atype], o[:hidden])
@@ -86,7 +89,7 @@ function main(args)
             best_episode = avgreward
         end
 
-        values = get_values(history, o[:discount])
+        values = get_values(history, o[:discount]; threshold=threshold)
         for t = 1:length(history)
             state = history[t].state.data
             action = history[t].action
@@ -176,7 +179,7 @@ function select_action(probs)
     return indmax(probs)
 end
 
-function get_values(history, γ; threshold=200)
+function get_values(history, γ; threshold=500)
     values = Array(typeof(history[1].reward), length(history)+1)
     if length(history) < threshold
         values[end] = length(history) - threshold
