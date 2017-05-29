@@ -221,7 +221,7 @@ function train!(w, memory, opts; o=Dict())
     next_states = convert(atype, next_states)
 
     # expected return
-    y0 = gamma*predict(w,next_states)
+    y0 = predict(w,next_states)
     y1 = maximum(y0,1)
     y2 = sum(y0 .* (y0.==y1), 1)
     y3 = reshape(y2, 1, length(y2))
